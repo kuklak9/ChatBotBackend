@@ -68,7 +68,6 @@ def new_chat():
     messages = []
     messages.append({"role": "system", "content": "Don't make assumptions about what values to plug into functions. Ask for clarification if a user request is ambiguous."})
     return jsonify({"success": True, "message": "New chat initialized"}), 201
-    
 
 def validate_login(username, password):
     conn_str = f"DRIVER={{SQL Server}};SERVER={DB_SERVER};DATABASE={DB_DATABASE};UID={DB_USERNAME};PWD={DB_PASSWORD}"
@@ -118,7 +117,6 @@ def decrypt_password(password):
     print(f"Expected Encrypted Password: {expected_encrypted_password}")
 
     return result
-
 
 def post_blink_command(payload):
     endpoint = f"{API_URL}/blink-api/v2/commands"
@@ -219,7 +217,6 @@ def blink_put(article_index, tray, quantity, location_symbol, batch, certificate
     
     return post_blink_command(command.to_json()) 
 
-
 def blink_put_cut(article_index, tray, quantity, location_symbol, batch, certificate, melt, program, tower, window):
     command = CommandData(
                 command=CommandEnum.PUT_CUT.value,
@@ -236,7 +233,6 @@ def blink_put_cut(article_index, tray, quantity, location_symbol, batch, certifi
     
     return post_blink_command(command.to_json()) 
 
-
 def blink_station_move(tower, window, location):
     command = CommandData(
                 command=CommandEnum.STATION_MOVE.value,
@@ -246,7 +242,7 @@ def blink_station_move(tower, window, location):
     
     return post_blink_command(command.to_json())
 
-def blink_lu_load(article_index, batch, laser_number, laser_table_number, material_source, ignore_laser_table_material):
+def blink_lu_load(article_index, laser_number, laser_table_number, material_source, ignore_laser_table_material, batch = None):
     command = CommandData(
         command=CommandEnum.LU_LOAD.value,
         parameter1=article_index,
@@ -259,7 +255,7 @@ def blink_lu_load(article_index, batch, laser_number, laser_table_number, materi
 
     return post_blink_command(command.to_json())
 
-def blink_lu_unload(article_index, batch, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, program_name):
+def blink_lu_unload( laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, program_name, article_index = None, batch = None):
     command = CommandData(
         command=CommandEnum.LU_UNLOAD.value,
         parameter1=article_index,
@@ -275,7 +271,7 @@ def blink_lu_unload(article_index, batch, laser_number, laser_table_number, unlo
 
     return post_blink_command(command.to_json())
 
-def blink_lu_loadunload(article_index, batch, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, material_source, program_name):
+def blink_lu_loadunload(article_index, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, material_source, program_name, batch = None):
     command = CommandData(
         command=CommandEnum.LU_LOADUNLOAD.value,
         parameter1=article_index,
@@ -319,7 +315,6 @@ def blink_lu_pickunloadtray(tray, tower, window):
 
     return post_blink_command(command.to_json())    
 
-
 def blink_lu_prepare(article_index, batch, tray, load, unload, laser_number, laser_table_number, transport_to_station, program_name):
     command = CommandData(
         command=CommandEnum.LU_PREPARE.value,
@@ -336,12 +331,24 @@ def blink_lu_prepare(article_index, batch, tray, load, unload, laser_number, las
 
     return post_blink_command(command.to_json())    
 
+def get_views_stock():
+    return get_views("stock")
+
+def get_views_tray_in_window():
+    return get_views("tray-in-window")
+
+def get_views_articles():
+    return get_views("articles")
+
+def get_views_article_in_window():
+    return get_views("article_in_window")
+
 tools = [
 {
     "type": "function",
     "function": {
         "name": "bring_item",
-        "description": ("Powoduje transport półki, która posiada podany indeks materiału i co najmniej ilośc arkuszy podaną w zapytaniu."
+        "description": ("Powoduje transport półki, która posiada podany indeks materiału i co najmniej ilość arkuszy podaną w zapytaniu."
                         "Transport ten odbywa się na wskazane okno we wskazanym regale."),
         "parameters": {
             "type": "object",
@@ -650,24 +657,26 @@ tools = [
     "type": "function",
     "function": {
         "name": "station_move",
-        "description": "Move automatic station",
+        "description": "Ruch stacji automatycznej na wskazaną lokalizację.",
         "parameters": {
             "type": "object",
             "properties": {
-                "towerNumber": {
+                "tower": {
                     "type": "integer",
-                    "description": "Number of tower that contains the station"
+                    "description": "Numer regału,do którego należy stacja automatyczna."
                 },
-                "windowNumber": {
+                "window": {
                     "type": "integer",
-                    "description": "Number of window which is related to the station"
+                    "description": "Numer okna, do którego przypisana jest stacja."
                 },
-                "stationLocation": {
+                "location": {
                     "type": "integer",
-                    "description": "Location where the station should go. 0 = go back to the tower (inside), 1 = move to location 1 (outside)"
+                    "description": ("Lokalizacja do której chcemy ruszyć stacją."
+                                    "0 oznacza powórt stacji do regału, a 1 oznacza wyjechanie stacją na pozycję zewnętrzą."
+                                    "Możliwy jest ruch na lokalizację inne niz 0 i 1.")
                 },                
             },
-            "required": ["towerNumber", "windowNumber", "stationLocation"]
+            "required": ["tower", "window", "location"]
         }
     }
 },
@@ -675,36 +684,40 @@ tools = [
     "type": "function",
     "function": {
         "name": "lu_load",
-        "description": "Load material to laser table",
+        "description": "Żądanie załadowania podanego stołu lasera materiałem o podanym indeksie.",
         "parameters": {
             "type": "object",
             "properties": {
-                "articleIndex": {
+                "article_index": {
                     "type": "string",
-                    "description": "Index of the article. Must be provided by the user and cannot be empty "
+                    "description": "Indeks materiału, który ma zostać załadowany na stół lasera. Przykład 'DC01_3000X1500X1'"
                 },
                 "batch": {
                     "type": "string",
-                    "description": "Batch (optional)"
+                    "description": "Partia, z której pochodzi żądany materiał."
                 },
-                "laserNumber": {
+                "laser_number": {
                     "type": "integer",
-                    "description": "Number of the laser"
+                    "description": "Numer lasera, którego stołu dotyczy to żądanie."
                 },
-                "laserTableNumber": {
+                "laser_table_number": {
                     "type": "integer",
-                    "description": "Number of the laser table (0(A)/1(B) - number of laser table)"
+                    "description": ("Numer stołu podanego wcześniej lasera, na który ma zostać załadowany materiał o podanym indeksie."
+                                    "Stół A oznacza stół o numerze 0, a stół B oznacza stół o numerze 1."),
                 },
-                "materialSource": {
+                "material_source": {
                     "type": "integer",
-                    "description": "Material source (0 = automatic, other number = access point number)"
+                    "description": ("Źródło pochodzenia materiału. 0, gdy system sam ma zdecydować skąd pobrać materiał." 
+                                    "Różne od 0, gdy chcemy sami wspacać z któego punktu dostępowego ma zostać pobrany ten materiał.")
                 },
-                "ignoreLaserTableMaterial": {
+                "ignore_laser_table_material": {
                     "type": "integer",
-                    "description": "Ignore laser table material (1 = loader will load material ignoring if laser table is empty or not)"
+                    "description": ("Wartość 0, gdy system ma odrzucać żądanie, gdy ma już zdefiniowany materiał na żądanym stole."
+                                    "Wartość 1, gdy ma mimo wszytsko wykonać żądanie - może to spowodować położenie kliku blach na stole lasera"
+                                    "lub położenie surowego materiału na materiale wyciętym")
                 },
             },
-            "required": ["articleIndex", "laserNumber", "laserTableNumber", "materialSource", "ignoreLaserTableMaterial"]
+            "required": ["article_index", "laser_number", "laser_table_number", "material_source", "ignore_laser_table_material"]
         }
     }
 },
@@ -712,48 +725,53 @@ tools = [
     "type": "function",
     "function": {
         "name": "lu_unload",
-        "description": "Unload material from laser table",
+        "description": "Żądanie rozładowania podanego stołu lasera.",
         "parameters": {
             "type": "object",
             "properties": {
-                "articleIndex": {
+                "article_index": {
                     "type": "string",
-                    "description": "Index of the article (optional; if specified, it will overwrite the stored material on the laser table)"
+                    "description": ("Indeks materiału, który ma być rozładowany."
+                                    "Jeżeli jest podany to nadpisuje indeks materiału, który znajduje się na podanym stole lasera.")
                 },
                 "batch": {
                     "type": "string",
-                    "description": "Batch (optional; if specified, it will overwrite the stored material on the laser table)"
+                    "description": ("Partaia, do któej należy wycięty materiał."
+                                    "Jeżeli jest podana to nadpisuje partię materiału, który znajduje się na podanym stole lasera.")
                 },
-                "laserNumber": {
+                "laser_number": {
                     "type": "integer",
-                    "description": "Number of the laser"
+                    "description": "Numer lasera, którego stołu dotyczy to żądanie."
                 },
-                "laserTableNumber": {
+                "laser_table_number": {
                     "type": "integer",
-                    "description": "Number of the laser table (0(A)/1(B) - number of laser table)"
+                    "description": "Numer stołu podanego wcześniej lasera, z którego ma zostać rozładowany materiał."
+                                    "Stół A oznacza stół o numerze 0, a stół B oznacza stół o numerze 1."
                 },
-                "unloadingTray": {
+                "unloading_tray": {
                     "type": "integer",
-                    "description": "Unloading tray (0 = automatic, other number = access point number/tray number)"
+                    "description": "Półka, na która ma być rozładowany materiał. 0 oznacza wybrób pólki automatycznie przez system."
+                                   "Numer różny od 0 zoancza rozłądunek na półkę o podanym tutaj numerze."
                 },
-                "ignoreLaserTableMaterial": {
+                "ignore_laser_table_material": {
                     "type": "integer",
-                    "description": "Ignore laser table material (1 = unloader will unload material ignoring if laser table is empty or not)"
+                    "description": "Wartość 0, gdy system ma odrzucać żądanie, gdy nie ma zdefiniowanego materiał na żądanym stole."
+                                    "Wartość 1, gdy ma mimo wszytsko wykonać żądanie"
                 },
-                "emptyTray": {
+                "empty_tray": {
                     "type": "integer",
-                    "description": "Empty tray (0/1 : 1 = unload on an empty tray, 0 = use unloader settings)"
+                    "description": "Wartość 1 gdy materiał ma zostać rozładowany na pustą półkę, wartość 0 gdy nie musi."
                 },
-                "onlyOneMaterialPerTray": {
+                "only_one_material_per_tray": {
                     "type": "integer",
-                    "description": "Only one material per tray (0/1 : 1 = after unloading tray will be considered as full, 0 = use unloader settings)"
+                    "description": "Wartość 1 spowoduje zablokwoanie półki po rozładunku, wartość 0 nie zablokuje półki po rozładunku."
                 },
-                "programName": {
+                "program_name": {
                     "type": "string",
-                    "description": "NC program name"
+                    "description": "Nazwa progrmau, którym został wyvięty materiał znajdujący się na żądanym stole."
                 },                
             },
-            "required": ["laserNumber", "laserTableNumber", "unloadingTray", "ignoreLaserTableMaterial", "emptyTray", "onlyOneMaterialPerTray", "programName"]
+            "required": ["laser_number", "laser_table_number", "unloading_tray", "ignore_laser_table_material", "empty_tray", "only_one_material_per_tray", "program_name"]
         }
     }
 },
@@ -761,52 +779,57 @@ tools = [
     "type": "function",
     "function": {
         "name": "lu_loadunload",
-        "description": "Load and unload material",
+        "description": "Żądanie rozładowania i załadowania stółu materiąłem o wybranym indeksie, za pomoca jednej komendy.",
         "parameters": {
             "type": "object",
             "properties": {
-                "articleIndex": {
+                "article_index": {
                     "type": "string",
-                    "description": "Index of the article (Material to be loaded)"
+                    "description": "Indeks materiału, który ma zostać załadowany na stół lasera. Przykład 'DC01_3000X1500X1'."
                 },
                 "batch": {
                     "type": "string",
-                    "description": "Batch (optional)"
+                    "description": "Partia, z której pochodzi żądany materiał."
                 },
-                "laserNumber": {
+                "laser_number": {
                     "type": "integer",
-                    "description": "Number of the laser"
+                    "description": "Numer lasera, którego stołu dotyczy to żądanie."
                 },
-                "laserTableNumber": {
+                "laser_table_number": {
                     "type": "integer",
-                    "description": "Number of the laser table (0(A)/1(B) - number of laser table)"
+                    "description": ("Numer stołu podanego wcześniej lasera, na który ma zostać rozładowany,"
+                                    "a nastepnie załadowany materiał o podanym indeksie."
+                                    "Stół A oznacza stół o numerze 0, a stół B oznacza stół o numerze 1."),
                 },
-                "unloadingTray": {
+                "unloading_tray": {
                     "type": "integer",
-                    "description": "Unloading tray (0 = automatic, other number = access point number/tray number)"
+                    "description": "Półka, na która ma być rozładowany materiał. 0 oznacza wybrób pólki automatycznie przez system."
+                                   "Numer różny od 0 zoancza rozłądunek na półkę o podanym tutaj numerze."
                 },
-                "ignoreLaserTableMaterial": {
+                "ignore_laser_table_material": {
                     "type": "integer",
-                    "description": "Ignore laser table material (1 = unloader will unload material ignoring if laser table is empty or not)"
+                    "description": "Wartość 0, gdy system ma odrzucać żądanie, gdy nie ma zdefiniowanego materiał na żądanym stole."
+                                    "Wartość 1, gdy ma mimo wszytsko wykonać żądanie"
                 },
-                "emptyTray": {
+                "empty_tray": {
                     "type": "integer",
-                    "description": "Empty tray (0/1 : 1 = unload on an empty tray, 0 = use unloader settings)"
+                    "description": "Wartość 1 gdy materiał ma zostać rozładowany na pustą półkę, wartość 0 gdy nie musi."
                 },
-                "onlyOneMaterialPerTray": {
+                "only_one_material_per_tray": {
                     "type": "integer",
-                    "description": "Only one material per tray (0/1 : 1 = after unloading tray will be considered as full, 0 = use unloader settings)"
+                    "description": "Wartość 1 spowoduje zablokwoanie półki po rozładunku, wartość 0 nie zablokuje półki po rozładunku."
                 },
-                "materialSource": {
+                "material_source": {
                     "type": "integer",
-                    "description": "Material source (0 = automatic, other number = access point number)"
+                    "description": ("Źródło pochodzenia materiału. 0, gdy system sam ma zdecydować skąd pobrać materiał." 
+                                    "Różne od 0, gdy chcemy sami wspacać z któego punktu dostępowego ma zostać pobrany ten materiał.")
                 },
-                "programName": {
+                "program_name": {
                     "type": "string",
-                    "description": "NC program name"
-                }
+                    "description": "Nazwa progrmau, którym został wyvięty materiał znajdujący się na żądanym stole."
+                },           
             },
-            "required": ["articleIndex", "laserNumber", "laserTableNumber", "unloadingTray", "ignoreLaserTableMaterial", "emptyTray", "onlyOneMaterialPerTray" ,"materialSource", "programName"]
+            "required": ["article_index", "laser_number", "laser_table_number", "unloading_tray", "ignore_laser_table_material", "empty_tray", "only_one_material_per_tray" ,"material_source", "program_name"]
         }
     }
 },
@@ -814,93 +837,93 @@ tools = [
             "type": "function",
             "function": {
                 "name": "articles",
-                "description": "return all created index's with quantity",
+                "description": "Zwraca wszytskie obecne w systemie indeksy wraz z ilością w jakiej są obecne w systemie.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "index": {
                             "type": "string",
-                            "description": "Index of the material",
+                            "description": "Indeks",
                         },
                         "name": {
                             "type": "string",
-                            "description": "Name of the material",
+                            "description": "Nazwa",
                         },
                         "description": {
                             "type": "integer", 
-                            "description": "Description of the material",
+                            "description": "Opis",
                         },
                         "artibute1": {
                             "type": "string",
-                            "description": "Artibute 1 of material",
+                            "description": "Atrybut 1",
                         },
                         "artibute2": {
                             "type": "string",
-                            "description": "Artibute 2 of material",
+                            "description": "Atrybut 2",
                         },
                         "artibute3": {
                             "type": "string",
-                            "description": "Artibute 3 of material",
+                            "description": "Atrybut 3",
                         },
                         "dimension1": {
                             "type": "number",
-                            "description": "dimension1 of material, the same what X dimension",
+                            "description": "Wymiar1, to samo co Wymiar X, podawany w jednostce określonej w parametrze jednostka",
                         },   
                         "dimension2": {
                             "type": "number",
-                            "description": "dimension2 of material, the same what Y dimension",
+                            "description": "Wymiar2, to samo co Wymiar Y, podawany w jednostce określonej w parametrze jednostka",
                         },
                         "dimension3": {
                             "type": "number",
-                            "description": "dimension3 of material, the samewhat Z dimension",
+                            "description": "Wymiar3, to samo co Wymiar Z, podawany w jednostce określonej w parametrze jednostka",
                         },
                         "dimension4": {
                             "type": "number",
-                            "description": "dimension4 of material",
+                            "description": "Wymiar4, podawany w jednostce określonej w parametrze jednostka",
                         },
                         "dimension5": {
                             "type": "number",
-                            "description": "dimension5 of material",
+                            "description": "Wymiar5, podawany w jednostce określonej w parametrze jednostka",
                         },        
                         "dimension6": {
                             "type": "number",
-                            "description": "dimension6 of material",
+                            "description": "Wymiar6, podawany w jednostce określonej w parametrze jednostka",
                         },  
                         "dimension7": {
                             "type": "number",
-                            "description": "dimension7 of material",
+                            "description": "Wymiar7, podawany w jednostce określonej w parametrze jednostka",
                         },  
                         "dimension8": {
                             "type": "number",
-                            "description": "dimension8 of material",
+                            "description": "Wymiar8, podawany w jednostce określonej w parametrze jednostka",
                         },    
                         "unitweight": {
                             "type": "number",
-                            "description": "weight of single piece of material",
+                            "description": "Waga pojedyńczego arkusza",
                         },   
                         "quantity": {
                             "type": "number",
-                            "description": "Quantity of this material in all warehouse",
+                            "description": "Ilość materiału o tym indeksie w całym magazynie",
                         },
                         "minimumquantity": {
                             "type": "number",
-                            "description": "Minimum quantity of this material",
+                            "description": "Wymagana minimalna ilość tego materiału",
                         },
                         "unit": {
                             "type": "string",
-                            "description": "unit for this material",
+                            "description": "Jednostka",
                         },
                         "materialtype": {
                             "type": "string",
-                            "description": "type of this material",
+                            "description": "Gatunek",
                         },
                         "category": {
                             "type": "string",
-                            "description": "category of this material",
+                            "description": "Kategoria",
                         },
                          "storageclass": {
                             "type": "string",
-                            "description": "category of this material",
+                            "description": "Klasa składowania",
                         },    
                     },
                 },
@@ -910,91 +933,79 @@ tools = [
             "type": "function",
             "function": {
                 "name": "stock",
-                "description": "Get information about stock in the warehouse",
+                "description": "Zwraca aktualny stan magazynowy, czyl inforamcję o tym jaki materiał w jakiej ilości jest na jakiej półce i jakiej lokalizacji.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "index": {
                             "type": "string",
-                            "description": "Index of the material",
+                            "description": "Indeks materiału",
                         },
                         "trayid": {
                             "type": "integer", 
-                            "description": "ID of tray which contain this index",
+                            "description": "Numer półki",
                         },
                         "locationsymbol": {
                             "type": "string",
-                            "description": "Symbol of location on the tray on which is this material",
+                            "description": "Symbol lokalizacji na półce",
                         },
                         "quantity": {
                             "type": "number",
-                            "description": "Quantity of this material on this location",
+                            "description": "Ilość na lokalizacji",
                         },
                         "materialbatch": {
                             "type": "string",
-                            "description": "batch of material on the tray",
+                            "description": "Partia materiału",
                         },
                         "materialcertificate": {
                             "type": "string",
-                            "description": "Certificate of material on the tray",
+                            "description": "Certyfikat",
                         },
                         "materialmelt": {
                             "type": "string",
-                            "description": "Melt of material on the tray",
+                            "description": "Wytop",
                         },
                         "artibute1": {
                             "type": "string",
-                            "description": "Artibute 1 of material on the tray",
+                            "description": "Atrybut 1",
                         },
                         "artibute2": {
                             "type": "string",
-                            "description": "Artibute 2 of material on the tray",
+                            "description": "Atrybut 2",
                         },
                         "artibute3": {
                             "type": "string",
-                            "description": "Artibute 3 of material on the tray",
+                            "description": "Atrybut 3",
                         },
                     },
                 },
             },
         },
-        {
+{
             "type": "function",
             "function": {
                 "name": "tray-in-window",
-                "description": "Get the current trays in all windows",
+                "description": "Zwraca numery półek w oknach ",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "tower": {
                             "type": "integer",
-                            "description": "Tower to which the window belongs",
+                            "description": "Regał do którego należy okno",
                         },
                         "window": {
                             "type": "integer", 
-                            "description": "Window to which the tray belongs",
+                            "description": "Półka w której lezy półka",
                         },
                         "trayid": {
                             "type": "integer",
-                            "description": "tray in specific window and tower",
+                            "description": "Numer półki w oknie",
                         },
                     },
                 },
             },
         }
 ]
-
-def get_views_stock():
-    return get_views("stock")
-
-def get_views_tray_in_window():
-    return get_views("tray-in-window")
-
-def get_views_articles():
-    return get_views("articles")
-
-def get_views_article_in_window():
-    return get_views("article_in_window")
 
 def call_function(function_name, function_args):
     if function_name in available_functions:
