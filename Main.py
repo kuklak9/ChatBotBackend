@@ -14,77 +14,73 @@ from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 import base64
 
+API_URL="http://localhost:5167"
+GPT_MODEL = "gpt-3.5-turbo-0613"
+OPENAI_API_KEY = "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"
+DB_SERVER = "192.168.0.200\\testinstance"
+DB_DATABASE = "SmartWMS"
+DB_USERNAME = "wms"
+DB_PASSWORD = "1"
+
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 CORS(app)
-API_URL='http://localhost:5167'
-GPT_MODEL = "gpt-3.5-turbo-0613"
-OPENAI_API_KEY = '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'
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
-DB_SERVER = '192.168.0.200\\testinstance'
-DB_DATABASE = 'SmartWMS'
-DB_USERNAME = 'wms'
-DB_PASSWORD = '1'
 
-last_message_index = -1
-
-@app.route('/get_message', methods=['GET'])
+@app.route("/get_message", methods=["GET"])
 def get_message():
     global messages
-    global last_message_index 
-    new_messages = messages[last_message_index + 1:]
     contents = [
     {
-        'role': message['role'] if isinstance(message, dict) else message.role,
-        'message': message['content'] if isinstance(message, dict) and message.get('content', '') != '' else (message.content if hasattr(message, 'content') and message.content != '' else None)
+        "role": message["role"] if isinstance(message, dict) else message.role,
+        "message": message["content"] if isinstance(message, dict) and message.get("content", "") != "" else (message.content if hasattr(message, "content") and message.content != "" else None)
     }
     for message in messages
-    if isinstance(message, dict) or (hasattr(message, 'content') and message.content != '')
+    if isinstance(message, dict) or (hasattr(message, "content") and message.content != "")
     ]
-    last_message_index = len(messages) - 1  
-    return jsonify({'messages': contents})
+    return jsonify({"messages": contents})
 
-
-@app.route('/add_message', methods=['POST'])
+@app.route("/add_message", methods=["POST"])
 def add_message():
-    content = request.json.get('content')
+    content = request.json.get("content")
     if content is not None:
         global messages
         messages.append({"role": "user", "content": content})
         send_to_model()
-        return jsonify({'success': True, 'message': 'Message sent successfully'}), 201
+        return jsonify({"success": True, "message": "Message sent successfully"}), 201
     else:
-        return jsonify({'success': False, 'message': 'No content provided'}), 400
+        return jsonify({"success": False, "message": "No content provided"}), 400
     
-@app.route('/do_login', methods=['POST'])
+@app.route("/do_login", methods=["POST"])
 def do_login():
-    login = request.json.get('login')
-    password = request.json.get('password')
+    login = request.json.get("login")
+    password = request.json.get("password")
     if login is not None and password is not None:     
         if  validate_login(login,password):
-            return jsonify({'success':  True,'message': 'User logged successfully'}), 201
+            return jsonify({"success":  True,"message": "User logged successfully"}), 201
         else:
-            return jsonify({'success': False, 'message': 'Wrong login or password'}), 201
+            return jsonify({"success": False, "message": "Wrong login or password"}), 201
     else:
-        return jsonify({'success': False, 'message': 'No login or password provided'}), 400
+        return jsonify({"success": False, "message": "No login or password provided"}), 400
     
-@app.route('/new_chat', methods=['POST'])
+@app.route("/new_chat", methods=["POST"])
 def new_chat():
     global messages
     messages = []
     messages.append({"role": "system", "content": "Don't make assumptions about what values to plug into functions. Ask for clarification if a user request is ambiguous."})
-    return jsonify({'success': True, 'message': 'New chat initialized'}), 201
+    return jsonify({"success": True, "message": "New chat initialized"}), 201
     
+
 def validate_login(username, password):
-    conn_str = f'DRIVER={{SQL Server}};SERVER={DB_SERVER};DATABASE={DB_DATABASE};UID={DB_USERNAME};PWD={DB_PASSWORD}'
+    conn_str = f"DRIVER={{SQL Server}};SERVER={DB_SERVER};DATABASE={DB_DATABASE};UID={DB_USERNAME};PWD={DB_PASSWORD}"
     conn = pyodbc.connect(conn_str)
     
     cursor = conn.cursor()
-    query = 'SELECT * FROM Kar_Operator'
+    query = "SELECT * FROM Kar_Operator"
     cursor.execute(query)
     rows = cursor.fetchall()
 
     for row in rows:
-        if row.ID_Operator == username and row.Haslo == '1NFl0EK3a+KP0UoAA4D44Q==': #do testów - szyforwanie nie działa
+        if row.ID_Operator == username and row.Haslo == "1NFl0EK3a+KP0UoAA4D44Q==": #do testów - szyforwanie nie działa
             return True
     conn.close()
 
@@ -127,8 +123,8 @@ def decrypt_password(password):
 def post_blink_command(payload):
     endpoint = f"{API_URL}/blink-api/v2/commands"
     headers = {
-        'Content-Type': 'application/json',
-        'accept': 'text/plain'
+        "Content-Type": "application/json",
+        "accept": "text/plain"
               }
     response = requests.post(endpoint, json=payload, headers=headers)
 
@@ -147,7 +143,100 @@ def get_views(endpoint):
         return json.dumps(response.text)
     else:
         return  f"Error while sending the request to the server. Error code: {response.status_code}"
-        
+
+def blink_bring_item(article_index, quantity, station_location, tower, window, batch=None):
+    command = CommandData(
+                command=CommandEnum.BRING_ITEM.value,
+                parameter1=article_index,
+                parameter2=quantity,
+                parameter3=batch,
+                parameter8=station_location,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+def blink_bring_tray(tray, station_location, tower, window):
+    command = CommandData(
+                command=CommandEnum.BRING_TRAY.value,
+                parameter1=tray,
+                parameter8=station_location,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+def blink_bring_cut(article_index, quantity, program_name, need_empty_tray, station_location, tower, window):
+    command = CommandData(
+                command=CommandEnum.BRING_CUT.value,
+                parameter1=article_index,
+                parameter2=quantity,
+                parameter3=program_name,
+                parameter4=need_empty_tray,
+                parameter8=station_location,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+def blink_bring_empty(station_location, tower, window, article_index=None, quantity=None):
+    command = CommandData(
+                command=CommandEnum.BRING_EMPTY.value,
+                parameter1=article_index,
+                parameter2=quantity,
+                parameter8=station_location,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+def blink_pick(article_index, tray, quantity, location_symbol, batch, tower, window):
+    command = CommandData(
+                command=CommandEnum.PICK.value,
+                parameter1=article_index,
+                parameter2=tray,
+                parameter3=quantity,
+                parameter4=location_symbol,
+                parameter5=batch,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+def blink_put(article_index, tray, quantity, location_symbol, batch, certificate, melt, attribute, tower, window):
+    command = CommandData(
+                command=CommandEnum.PUT.value,
+                parameter1=article_index,
+                parameter2=tray,
+                parameter3=quantity,
+                parameter4=location_symbol,
+                parameter5=batch,
+                parameter6=certificate,
+                parameter7=melt,
+                parameter8=attribute,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+
+def blink_put_cut(article_index, tray, quantity, location_symbol, batch, certificate, melt, program, tower, window):
+    command = CommandData(
+                command=CommandEnum.PUT_CUT.value,
+                parameter1=article_index,
+                parameter2=tray,
+                parameter3=quantity,
+                parameter4=location_symbol,
+                parameter5=batch,
+                parameter6=certificate,
+                parameter7=melt,
+                parameter8=program,
+                parameter9=tower,
+                parameter10=window)
+    
+    return post_blink_command(command.to_json()) 
+
+
 def blink_station_move(tower, window, location):
     command = CommandData(
                 command=CommandEnum.STATION_MOVE.value,
@@ -157,7 +246,7 @@ def blink_station_move(tower, window, location):
     
     return post_blink_command(command.to_json())
 
-def blink_laod_table(article_index, batch, laser_number, laser_table_number, material_source, ignore_laser_table_material):
+def blink_lu_load(article_index, batch, laser_number, laser_table_number, material_source, ignore_laser_table_material):
     command = CommandData(
         command=CommandEnum.LU_LOAD.value,
         parameter1=article_index,
@@ -170,7 +259,7 @@ def blink_laod_table(article_index, batch, laser_number, laser_table_number, mat
 
     return post_blink_command(command.to_json())
 
-def blink_unload_table(article_index, batch, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, program_name):
+def blink_lu_unload(article_index, batch, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, program_name):
     command = CommandData(
         command=CommandEnum.LU_UNLOAD.value,
         parameter1=article_index,
@@ -186,7 +275,7 @@ def blink_unload_table(article_index, batch, laser_number, laser_table_number, u
 
     return post_blink_command(command.to_json())
 
-def blink_unload_and_load_table(article_index, batch, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, material_source, program_name):
+def blink_lu_loadunload(article_index, batch, laser_number, laser_table_number, unloading_tray, ignore_laser_table_material, empty_tray, only_one_material_per_tray, material_source, program_name):
     command = CommandData(
         command=CommandEnum.LU_LOADUNLOAD.value,
         parameter1=article_index,
@@ -203,59 +292,361 @@ def blink_unload_and_load_table(article_index, batch, laser_number, laser_table_
 
     return post_blink_command(command.to_json())    
 
-def pretty_print_conversation(messages, last_printed_index):
-    role_to_color = {
-        "system": "red",
-        "user": "green",
-        "assistant": "blue",
-        "tool": "magenta",
-    }
+def blink_lu_resttotower(article_index, batch, laser_number, laser_table_number, tray_for_rest_of_material, dimension1, dimension2, program_name, unload_scrap_after_transport):
+    command = CommandData(
+        command=CommandEnum.LU_RESTTOTOWER.value,
+        parameter1=article_index,
+        parameter2=batch,
+        parameter3=laser_number,
+        parameter4=laser_table_number,
+        parameter5=tray_for_rest_of_material,
+        parameter6=dimension1,
+        parameter7=dimension2,
+        parameter8=program_name,
+        parameter9=unload_scrap_after_transport,
+        parameter10=program_name
+    )
 
-    for i in range(last_printed_index + 1, len(messages)):
-        message = messages[i]
+    return post_blink_command(command.to_json())    
 
-        if isinstance(message, dict):
-            role = message.get('role')
-            content = message.get('content')
-            
-            if role == "system":
-                print(colored(f"system: {content}\n", role_to_color[role]))
-            elif role == "user":
-                print(colored(f"user: {content}\n", role_to_color[role]))
-            elif role == "assistant" and 'function_call' in message:
-                function_call = message['function_call']
-                print(colored(f"assistant (function call): {function_call['content']}\n", role_to_color[role]))
-            elif role == "assistant" and 'content' in message:
-                print(colored(f"assistant: {content}\n", role_to_color[role]))
-            elif role == "tool":
-                print(colored(f"function ({message['name']}): {content}\n", role_to_color[role]))
-            else:
-                print(colored(f"{role}: {content}\n", role_to_color.get(role, 'white')))
-        else:
-            inner_message = getattr(message, 'message', message)
+def blink_lu_pickunloadtray(tray, tower, window):
+    command = CommandData(
+        command=CommandEnum.LU_PICKUNLOADTRAY.value,
+        parameter1=tray,
+        parameter9=tower,
+        parameter10=window,
+    )
 
-            if isinstance(inner_message, str):
-                print(colored(f"assistant: {inner_message}\n", role_to_color["assistant"]))
-            else:
-                role = inner_message.role
-                content = inner_message.content
+    return post_blink_command(command.to_json())    
 
-                if role == "system":
-                    print(colored(f"system: {content}\n", role_to_color[role]))
-                elif role == "user":
-                    print(colored(f"user: {content}\n", role_to_color[role]))
-                elif role == "assistant" and 'function_call' in inner_message:
-                    function_call = inner_message['function_call']
-                    print(colored(f"assistant (function call): {function_call['content']}\n", role_to_color[role]))
-                elif role == "assistant" and 'content' in inner_message:
-                    print(colored(f"assistant: {content}\n", role_to_color[role]))
-                elif role == "tool":
-                    print(colored(f"function ({inner_message['name']}): {content}\n", role_to_color[role]))
-                else:
-                    print(colored(f"assistant: {content}\n", role_to_color["assistant"]))  
-    
+
+def blink_lu_prepare(article_index, batch, tray, load, unload, laser_number, laser_table_number, transport_to_station, program_name):
+    command = CommandData(
+        command=CommandEnum.LU_PREPARE.value,
+        parameter1=article_index,
+        parameter2=batch,
+        parameter3=tray,
+        parameter4=load,
+        parameter5=unload,
+        parameter6=laser_number,
+        parameter7=laser_table_number,
+        parameter8=transport_to_station,
+        parameter9=program_name,
+    )
+
+    return post_blink_command(command.to_json())    
+
 tools = [
-    {
+{
+    "type": "function",
+    "function": {
+        "name": "bring_item",
+        "description": ("Powoduje transport półki, która posiada podany indeks materiału i co najmniej ilośc arkuszy podaną w zapytaniu."
+                        "Transport ten odbywa się na wskazane okno we wskazanym regale."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "article_index": {
+                    "type": "string",
+                    "description": "Indeks materiału, który znajduje się na półke, którą chcemy przywieźć na wskazane okno. Przykład 'DC01_3000X1500X1'."
+                },
+                "quantity": {
+                    "type": "integer",
+                    "description": "Minimalna ilość materiału, która powinna znajadować się na przywożonej półce."
+                },
+                "batch": {
+                    "type": "string",
+                    "description": "Partia, do której należy przywożony materiał."
+                },
+                "station_location": {
+                    "type": "integer",
+                    "description": ("Jeżeli we wskazanym oknie wstępuje stacja automatyczna to przez ten parametr określana jest pozycja,"
+                                    "w której ma się znajdować ta stacja po przywiezieniu półki."
+                                    "1 oznacza jazdę stacji na pozycję na zewnątrz regału, 0 oznacza pozostanie w regale.")
+                },       
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, do którego należy okno, na które na zostać przywieziona pólka z materiałem."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, do któego ma się odbyc trasport półki"
+                },
+         
+            },
+            "required": ["article_index", "quantity", "station_location", "tower", "window"]
+        }
+    }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "bring_tray",
+        "description": "Powoduje transport półki o wskazanym numerze. Transport ten odbywa się na wskazane okno we wskazanym regale.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tray": {
+                    "type": "integer",
+                    "description": "Numer półki, która ma zostać przwieziona na okno."
+                },
+                "station_location": {
+                    "type": "integer",
+                    "description": ("Jeżeli we wskazanym oknie wstępuje stacja automatyczna to przez ten parametr określana jest pozycja,"
+                                    "w której ma się znajdować ta stacja po przywiezieniu półki."
+                                    "1 oznacza jazdę stacji na pozycję na zewnątrz regału, 0 oznacza pozostanie w regale.")
+                },       
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, do którego należy okno, na które na zostać przywieziona pólka z materiałem."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, do któego ma się odbyc trasport półki"
+                },
+         
+            },
+            "required": ["tray", "station_location", "tower", "window"]
+        }
+    }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "bring_cut",
+        "description": ("Powoduje transport półki, która może przyjąć wycięty materiał o podanym indeksie."
+                        "Wyszukiwanie półki do transportu odbywa się na podstawie podanego indeksu i nazwy programu za pomocą którego wycięty został materiał."
+                        "Możliwe jest wymaganie pustej półki."
+                        "Transport ten odbywa się na wskazane okno we wskazanym regale.",
+                        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "article_index": {
+                    "type": "string",
+                    "description": "Indeks wyciętego materiału, który chcemy położyć na przywożonej półce. Przykład 'C_DC01_3000X1500X1'."
+                },
+                "quantity": {
+                    "type": "integer",
+                    "description": "Ilość wyciętych arkuszy o wskazanym indeksie, które chcemy położyć na przywożonej półce."
+                },
+                "program_name": {
+                    "type": "string",
+                    "description": "Nazwa programu, którym wycięty został wskazany materiał."
+                },  
+                "need_empty_tray": {
+                    "type": "integer",
+                    "description": "Należy podać wartość 1 jeżeli przywieziona ma zostać pusta półka."
+                },   
+                "station_location": {
+                    "type": "integer",
+                    "description": ("Jeżeli we wskazanym oknie wstępuje stacja automatyczna to przez ten parametr określana jest pozycja,"
+                                    "w której ma się znajdować ta stacja po przywiezieniu półki."
+                                    "1 oznacza jazdę stacji na pozycję na zewnątrz regału, 0 oznacza pozostanie w regale.")
+                },      
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, do którego należy okno, na które na zostać przywieziona pólka z materiałem."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, do któego ma się odbyc trasport półki"
+                },
+         
+            },
+            "required": ["article_index", "quantity", "program_name", "need_empty_tray", "station_location", "tower", "window"]
+        }
+    }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "bring_empty",
+        "description": "Powoduje transport pustej półki. Transport ten odbywa się na wskazane okno we wskazanym regale.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "article_index": {
+                    "type": "string",
+                    "description": "Indeks materiału, który chcemy położyć na przywożonej pustej półce. Przykład 'DC01_3000X1500X1'."
+                },
+                "quantity": {
+                    "type": "integer",
+                    "description": "Ilość arkuszy o wskazanym indeksie, które chcemy położyć na przywożonej pustej półce."
+                },
+                "station_location": {
+                    "type": "integer",
+                    "description": ("Jeżeli we wskazanym oknie wstępuje stacja automatyczna to przez ten parametr określana jest pozycja,"
+                                    "w której ma się znajdować ta stacja po przywiezieniu półki."
+                                    "1 oznacza jazdę stacji na pozycję na zewnątrz regału, 0 oznacza pozostanie w regale.")
+                },      
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, do którego należy okno, na które na zostać przywieziona pólka z materiałem."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, do któego ma się odbyc trasport półki"
+                },
+         
+            },
+            "required": ["station_location", "tower", "window"]
+        }
+    }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "pick",
+        "description": ("Powoduje poinformowanie systemu o pobraniu materiału i zaktualizowanie jego ilości."
+                        "Gdy podana ilość materiału będzie większa bądź równa ilości na półce, materiał zostanie z niej usunięty."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "article_index": {
+                    "type": "string",
+                    "description": "Indeks materiału, który został pobrany z magazynu. Przykład 'DC01_3000X1500X1'."
+                },
+                "tray": {
+                    "type": "integer",
+                    "description": "Numer półki, z której został ten materiał pobrany"
+                },
+                "quantity": {
+                    "type": "integer",
+                    "description": "Ilość materiału, która została pobrana z podanej półki."
+                },
+                "location_symbol": {
+                    "type": "string",
+                    "description": "Symbol lokalizacji na półce, z której materiał został pobrany. Wymagane gdy system używa lokalizacji."
+                },
+                "batch": {
+                    "type": "string",
+                    "description": "Partia, do której należy pobierany materiał."
+                }, 
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, przy którym nastapiła operacja pobrania materiału."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, przy którym nastapiła operacja pobrania materiału."
+                },
+         
+            },
+            "required": ["article_index", "tray", "quantity", "tower", "window"]
+        }
+    }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "put",
+        "description": "Powoduje poinformowanie systemu o włożeniu materiału i zaktualizowanie jego ilości.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "article_index": {
+                    "type": "string",
+                    "description": "Indeks materiału, który został pobrany z magazynu. Przykład 'DC01_3000X1500X1'."
+                },
+                "tray": {
+                    "type": "integer",
+                    "description": "Numer półki, z której został ten materiał pobrany"
+                },
+                "quantity": {
+                    "type": "integer",
+                    "description": "Ilość materiału, która została pobrana z podanej półki."
+                },
+                "location_symbol": {
+                    "type": "string",
+                    "description": "Symbol lokalizacji na półce, z której materiał został pobrany. Wymagane gdy system używa lokalizacji."
+                },
+                "batch": {
+                    "type": "string",
+                    "description": "Partia, do której należy pobierany materiał."
+                }, 
+                "certificate": {
+                    "type": "string",
+                    "description": "Nazwa atestu, jeżeli materiał go posiada."
+                }, 
+                "melt": {
+                    "type": "string",
+                    "description": "Nazwa wytopu, jeżeli materiał go posiada."
+                }, 
+                "attribute": {
+                    "type": "string",
+                    "description": "Nazwa atrybutu, jeżeli materiał go posiada."
+                }, 
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, przy którym nastapiła operacja włożenia materiału."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, przy którym nastapiła operacja włożenia materiału."
+                },
+         
+            },
+            "required": ["article_index", "tray", "quantity", "tower", "window"]
+        }
+    }
+},
+{
+    "type": "function",
+    "function": {
+        "name": "put_cut",
+        "description": ("Powoduje poinformowanie systemu o włożeniu wyciętego materiału i zaktualizowanie jego ilości."
+                        "Dla podanego indeksu i nazwy programu utworzony zostanie automatycznie nowy indeks."),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "article_index": {
+                    "type": "string",
+                    "description": "Indeks materiału, który został pobrany z magazynu. Przykład 'DC01_3000X1500X1'."
+                },
+                "tray": {
+                    "type": "integer",
+                    "description": "Numer półki, z której został ten materiał pobrany"
+                },
+                "quantity": {
+                    "type": "integer",
+                    "description": "Ilość materiału, która została pobrana z podanej półki."
+                },
+                "location_symbol": {
+                    "type": "string",
+                    "description": "Symbol lokalizacji na półce, z której materiał został pobrany. Wymagane gdy system używa lokalizacji."
+                },
+                "batch": {
+                    "type": "string",
+                    "description": "Partia, do której należy pobierany materiał."
+                }, 
+                "certificate": {
+                    "type": "string",
+                    "description": "Nazwa atestu, jeżeli materiał go posiada."
+                }, 
+                "melt": {
+                    "type": "string",
+                    "description": "Nazwa wytopu, jeżeli materiał go posiada."
+                }, 
+                "program_name": {
+                    "type": "string",
+                    "description": "Nazwa programu, którym wycięty został wskazany materiał."
+                },  
+                "tower": {
+                    "type": "integer",
+                    "description": "Numer regału, przy którym nastapiła operacja włożenia materiału."
+                },
+                "window": {
+                    "type": "integer",
+                    "description": "Numer okna, przy którym nastapiła operacja włożenia materiału."
+                },
+         
+            },
+            "required": ["article_index", "tray", "quantity", "tower", "window"]
+        }
+    }
+},
+{
     "type": "function",
     "function": {
         "name": "station_move",
@@ -283,7 +674,7 @@ tools = [
 {
     "type": "function",
     "function": {
-        "name": "load_table",
+        "name": "lu_load",
         "description": "Load material to laser table",
         "parameters": {
             "type": "object",
@@ -320,7 +711,7 @@ tools = [
 {
     "type": "function",
     "function": {
-        "name": "unload_table",
+        "name": "lu_unload",
         "description": "Unload material from laser table",
         "parameters": {
             "type": "object",
@@ -369,7 +760,7 @@ tools = [
 {
     "type": "function",
     "function": {
-        "name": "unload_and_load_table",
+        "name": "lu_loadunload",
         "description": "Load and unload material",
         "parameters": {
             "type": "object",
@@ -605,11 +996,28 @@ def get_views_articles():
 def get_views_article_in_window():
     return get_views("article_in_window")
 
+def call_function(function_name, function_args):
+    if function_name in available_functions:
+        function_to_call = available_functions[function_name]
+        function_response = function_to_call(**function_args)
+        return function_response
+    else:
+        return f"Error: Function {function_name} not available."
+
 available_functions = {
+            "bring_item"            : blink_bring_item,
+            "bring_tray"            : blink_bring_tray,
+            "bring_empty"           : blink_bring_empty,
+            "bring_cut"             : blink_bring_cut,
+            "pick"                  : blink_pick,
+            "put"                   : blink_put,
+            "put_cut"               : blink_put_cut,
             "station_move"          : blink_station_move,
-            "load_table"            : blink_laod_table,
-            "unload_table"          : blink_unload_table,
-            "unload_and_load_table" : blink_unload_and_load_table,
+            "lu_load"               : blink_lu_load,
+            "lu_unload"             : blink_lu_unload,
+            "lu_loadunload"         : blink_lu_loadunload,
+            "lu_pickunloadtray"     : blink_lu_pickunloadtray,
+            "lu_prepare"            : blink_lu_prepare,
             "articles"              : get_views_articles,
             "stock"                 : get_views_stock,
             "tray-in-window"        : get_views_tray_in_window,
@@ -619,13 +1027,12 @@ available_functions = {
 messages = []
 last_printed_index = -1
 messages.append({"role": "system", "content": "Don't make assumptions about what values to plug into functions. Ask for clarification if a user request is ambiguous."})
-remove_messages_after_showing = False
 
 def flask_app():
     app.run(debug=True)
 
 def send_to_model():
-    global messages, last_printed_index, remove_messages_after_showing
+    global messages
     response = client.chat.completions.create(
         model= GPT_MODEL,
         messages=messages,
@@ -642,83 +1049,30 @@ def send_to_model():
         messages.append(response_message.message)
         for tool_call in tool_calls:
             function_name = tool_call.function.name
-            function_to_call = available_functions[function_name]       
             function_args = json.loads(tool_call.function.arguments)
 
-        if function_name == "station_move":
-            function_response = function_to_call(
-            tower=function_args.get("towerNumber"),
-            window=function_args.get("windowNumber"),
-            location=function_args.get("stationLocation"),
-            )
-        elif function_name == "load_table":
-            function_response = function_to_call(
-            article_index=function_args.get("articleIndex"),
-            batch=function_args.get("batch"),
-            laser_number=function_args.get("laserNumber"),
-            laser_table_number=function_args.get("laserTableNumber"),
-            material_source=function_args.get("materialSource"),
-            ignore_laser_table_material=function_args.get("ignoreLaserTableMaterial"),
-            )
-        elif function_name == "unload_table":
-            function_response = function_to_call(
-            article_index=function_args.get("articleIndex"),
-            batch=function_args.get("batch"),
-            laser_number=function_args.get("laserNumber"),
-            laser_table_number=function_args.get("laserTableNumber"),
-            unloading_tray=function_args.get("unloadingTray"),
-            ignore_laser_table_material=function_args.get("ignoreLaserTableMaterial"),
-            empty_tray=function_args.get("emptyTray"),
-            only_one_material_per_tray=function_args.get("onlyOneMaterialPerTray"),
-            program_name=function_args.get("programName"),
-                )
-        elif function_name == "unload_and_load_table":
-            function_response = function_to_call(
-            article_index=function_args.get("articleIndex"),
-            batch=function_args.get("batch"),
-            laser_number=function_args.get("laserNumber"),
-            laser_table_number=function_args.get("laserTableNumber"),
-            unloading_tray=function_args.get("unloadingTray"),
-            ignore_laser_table_material=function_args.get("ignoreLaserTableMaterial"),
-            empty_tray=function_args.get("emptyTray"),
-            only_one_material_per_tray=function_args.get("onlyOneMaterialPerTray"),
-            material_source=function_args.get("materialSource"),
-            program_name=function_args.get("programName"),
-            )
-        elif function_name == "tray-in-window" or function_name == "stock" or function_name == "articles":
-            function_response = function_to_call()
-        else:
-            print(f"Unsupported function: {function_name}")
-            function_response = None
-        messages.append(
-            {
-                "tool_call_id": tool_call.id,
-                "role": "tool",
-                "name": function_name,
-                "content": function_response,
-            }       
-        )
+            function_response = call_function(function_name, function_args)
 
-        second_response = client.chat.completions.create(
-            model= GPT_MODEL,
-            messages=messages,
-        )
-        messages.append(
-            {
-                "role": "assistant",
-                "content": second_response.choices[0].message.content
-            })
-        #remove_messages_after_showing = True
+            messages.append(
+                {
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": function_name,
+                    "content": function_response,
+                }       
+            )
+            second_response = client.chat.completions.create(
+                model= GPT_MODEL,
+                messages=messages,
+            )
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": second_response.choices[0].message.content
+                })
     else:        
         messages.append(response_message.message)
 
-    #pretty_print_conversation(messages, last_printed_index)
-    #last_printed_index = len(messages) - 1  
-    #if remove_messages_after_showing:
-    #    messages = []
-    #    last_printed_index = -1
-    #    messages.append({"role": "system", "content": "Don't make assumptions about what values to plug into functions. Ask for clarification if a user request is ambiguous."})
-    #    remove_messages_after_showing = False
 
 flask_app()
 
